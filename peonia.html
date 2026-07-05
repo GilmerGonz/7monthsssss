@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Peonia</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    canvas { display: block; }
+
+    #canvas-container { width: 100%; height: 100%; }
+
+    #intro {
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      transition: opacity 1.5s ease;
+      font-family: 'Courier New', monospace;
+      padding: 20px;
+      text-align: center;
+    }
+
+    #intro.fade { opacity: 0; pointer-events: none; }
+
+    #ascii-text {
+      color: #e9b;
+      font-size: 17px;
+      line-height: 1.8;
+      max-width: 650px;
+      white-space: pre-wrap;
+      text-shadow: 0 0 8px rgba(238, 153, 187, 0.4);
+    }
+    
+    #continue-btn {
+      margin-top: 50px;
+      color: #888;
+      font-size: 13px;
+      letter-spacing: 2px;
+      opacity: 0;
+      transition: opacity 1s ease;
+      cursor: pointer;
+    }
+    
+    #continue-btn.visible {
+      opacity: 1;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+
+  </style>
+</head>
+<body>
+
+  <div id="canvas-container"></div>
+
+  <div id="intro">
+    <div id="ascii-text"></div>
+    <div id="continue-btn">[ CLICK TO BLOOM ]</div>
+  </div>
+
+  <script>
+    let p5Instance = null;
+
+    const loaderBar = null;
+    const loaderPct = null;
+    const introEl = document.getElementById('intro');
+    const asciiEl = document.getElementById('ascii-text');
+    const continueBtn = document.getElementById('continue-btn');
+
+    let p5LoadingDone = false;
+    let textAnimationDone = false;
+    let allowedToStart = false;
+
+    const fullMsg = "Molita, HAPPY 7 MONTHS!\n\nJust so you know, I think about you and love you a whole damn lot—but you already know that. The distance isn't easy, but knowing that you feel so close is the one thing that keeps me at peace.\n\nI hope you like this flower.";
+    const randChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*<>/\\|{}[]';
+
+    let currentLen = 0;
+    
+    function animateText() {
+      if (currentLen >= fullMsg.length * 3) {
+        textAnimationDone = true;
+        checkIntroReady();
+        return;
+      }
+      
+      let out = "";
+      let targetLen = Math.floor(currentLen / 3);
+      for (let i = 0; i < targetLen; i++) out += fullMsg[i];
+      if (targetLen < fullMsg.length - 1) {
+        if (fullMsg[targetLen] === ' ' || fullMsg[targetLen] === '\n') {
+          out += fullMsg[targetLen];
+        } else {
+          out += randChars[Math.floor(Math.random() * randChars.length)];
+        }
+      }
+      
+      asciiEl.textContent = out;
+      currentLen++;
+      setTimeout(animateText, 35);
+    }
+    
+    setTimeout(animateText, 800);
+
+    function checkIntroReady() {
+      if (textAnimationDone && p5LoadingDone) {
+        continueBtn.classList.add('visible');
+      }
+    }
+
+    continueBtn.addEventListener('click', () => {
+      if (textAnimationDone && p5LoadingDone && !allowedToStart) {
+        allowedToStart = true;
+        introEl.classList.add('fade');
+        if (p5Instance) p5Instance.startExperience();
+      }
+    });
+
+    function checkReady() {
+      p5LoadingDone = true;
+      checkIntroReady();
+    }
+
+    const sketch = function(p) {
+      const BUF_W = 680, BUF_H = 680;
+      let buf;
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*'.split('');
+      let ctx;
+
+
+
+      let elements = [];
+      let curEl    = 0;
+
+
+      let phase  = 'growing';
+      let phaseT = 0;
+
+      let bloom       = 0;
+      let bloomTarget = 1;
+      let lastBloom   = -1;
+
+      let renderMode = 0, prevMode = 0, modeT = 1;
+
+      let grid = 4, gridTarget = 4;
+      const GRID_MIN = 4, GRID_MAX = 20;
+      let densDir = 1, densTimer = 0;
+
+      let mInfX = 0, mInfY = 0;
+      let t = 0;
+
+      let rabbits = [];
+      let grassBlades = [];
+      let hearts = [];
+      const CENTER_EXCL_R = 100;
+
+      let rotX = 0, rotY = 0, rotZ = 0;
+      let autoRotX = 0, autoRotY = 0, autoRotZ = 0;
+      let mouseRotX = 0, mouseRotY = 0;
+      let targetMouseRotX = 0, targetMouseRotY = 0;
+      let rotEaseIn = 0;
+
+      let loadingPhase = true;
+      let warmFrames   = 0;
+      const WARM_TARGET = 60;
+
+      let glitchTimer     = 0;
+      let glitchActive    = false;
+      let glitchIntensity = 0;
+      let glitchSlices    = [];
+
+      let wilt     = 0;
+      let lastWilt = -1;
+
+      const easeInOutCubic = x => x < 0.5 ? 4*x*x*x : 1 - p.pow(-2*x+2, 3) / 2;
+      const easeOutQuart   = x => 1 - p.pow(1 - x, 4);
+
+      p.setup = function() {
+        p.createCanvas(p.windowWidth, p.windowHeight);
+        p.pixelDensity(1);
+        p.textFont('Courier New, monospace');
+        p.textAlign(p.CENTER, p.CENTER);
+        p.noStroke();
+
+        buf = p.createGraphics(BUF_W, BUF_H);
+        buf.pixelDensity(1);
+        buf.noSmooth();
+        buf.canvas.getContext('2d', { willReadFrequently: true });
+
+        ctx = p.drawingContext;
+
+        elements = [
+          { c1:[230,130,170], c2:[255,210,235], c3:[170,60,100],  stemC:[55,85,40],  layers:14, petalsPerLayer:9,  maxRadius:155, ruffleAmt:12, sepals:5 },
+          { c1:[240,170,190], c2:[255,230,240], c3:[190,90,130],  stemC:[55,88,42],  layers:15, petalsPerLayer:10, maxRadius:150, ruffleAmt:14, sepals:6 },
+          { c1:[200,100,180], c2:[245,185,225], c3:[150,45,110],  stemC:[50,80,38],  layers:13, petalsPerLayer:9,  maxRadius:158, ruffleAmt:13, sepals:5 },
+        ];
+
+        startElement(0);
+        initRabbitsAndGrass();
+      };
+
+      function startElement(idx) {
+        curEl       = idx;
+        bloom       = 0;
+        bloomTarget = 1;
+        lastBloom   = -1;
+        lastWilt    = -1;
+        wilt        = 0;
+        phase       = 'growing';
+        phaseT      = 0;
+        grid        = GRID_MIN;
+        gridTarget  = GRID_MIN;
+        densDir     = 1;
+        densTimer   = 0;
+        modeT       = 1;
+      }
+
+      p.startExperience = function() {
+        loadingPhase = false;
+      };
+
+      p.draw = function() {
+        const dt = p.deltaTime / 1000;
+        const f  = elements[curEl];
+
+        if (loadingPhase) {
+          p.background(0);
+          bloom = p.min(0.5, warmFrames / WARM_TARGET * 0.5);
+          drawFlowerToBuffer(f, bloom, 0);
+          warmFrames++;
+          const pct = p.min(100, p.floor(warmFrames / WARM_TARGET * 100));
+          if (loaderBar) loaderBar.style.width = pct + '%';
+          if (loaderPct) loaderPct.textContent  = pct + '%';
+          if (warmFrames >= WARM_TARGET) {
+            p5LoadingDone = true;
+            checkReady();
+          }
+          return;
+        }
+
+        p.background(0);
+        t += 0.016;
+
+        rotEaseIn = p.min(1, rotEaseIn + dt * 0.08);
+        const re = easeInOutCubic(rotEaseIn);
+
+        autoRotY += dt * 0.3  * re;
+        autoRotX += dt * 0.12 * p.sin(t * 0.15) * re;
+        autoRotZ += dt * 0.08 * p.sin(t * 0.09 + 1.5) * re;
+
+        targetMouseRotX = (p.mouseY - p.height / 2) / p.height * 1.2;
+        targetMouseRotY = (p.mouseX - p.width  / 2) / p.width  * 1.8;
+        mouseRotX += (targetMouseRotX - mouseRotX) * 0.04;
+        mouseRotY += (targetMouseRotY - mouseRotY) * 0.04;
+
+        rotX = autoRotX + mouseRotX * re;
+        rotY = autoRotY + mouseRotY * re;
+        rotZ = autoRotZ;
+
+        if (phase === 'growing') {
+          bloom += (bloomTarget - bloom) * 0.006;
+          phaseT += dt;
+          if (bloom > 0.98) { bloom = 1; phase = 'interactive'; phaseT = 0; }
+        }
+
+        densTimer += dt;
+        if (densTimer > 0.8) {
+          densTimer = 0;
+          triggerGlitch();
+          prevMode   = renderMode;
+          renderMode = (renderMode + 1) % 3;
+          modeT      = 0;
+          if (densDir === 1) { gridTarget = GRID_MAX; densDir = -1; }
+          else               { gridTarget = GRID_MIN; densDir =  1; }
+        }
+
+        if (phase === 'interactive') {
+          phaseT += dt;
+          if (phaseT > 25) { phase = 'wilting'; phaseT = 0; triggerGlitch(); }
+        }
+
+        if (phase === 'wilting') {
+          wilt    = p.min(1, wilt + dt * 0.04);
+          phaseT += dt;
+          if (wilt > 0.95) { phase = 'waiting'; phaseT = 0; }
+        }
+
+        if (phase === 'waiting') {
+          phaseT += dt;
+          if (phaseT > 0.6) {
+            prevMode   = renderMode;
+            renderMode = (renderMode + 1) % 3;
+            modeT      = 0;
+            triggerGlitch();
+            startElement((curEl + 1) % elements.length);
+          }
+        }
+
+        grid  += (gridTarget - grid) * 0.08;
+        modeT  = p.min(1, modeT + dt * 4.0);
+
+        updateGlitch(dt);
+
+        if (phase === 'interactive') {
+          mInfX += ((p.mouseX - p.width  / 2) * 0.08 - mInfX) * 0.04;
+          mInfY += ((p.mouseY - p.height / 2) * 0.08 - mInfY) * 0.04;
+        } else {
+          mInfX *= 0.95;
+          mInfY *= 0.95;
+        }
+
+        drawFlowerToBuffer(f, bloom, wilt);
+
+        glitchTimer -= dt;
+        if (glitchTimer <= 0 && !glitchActive) {
+          glitchTimer = p.random(3, 7);
+          if (p.random() < 0.4) triggerGlitch();
+        }
+
+        renderToScreen();
+
+        drawGlitchOverlay();
+        drawFPS();
+      };
+
+
+
+      function triggerGlitch() {
+        glitchActive    = true;
+        glitchIntensity = p.random(0.4, 1.0);
+        glitchSlices    = [];
+        const scaleF = p.min(p.width / BUF_W, p.height / BUF_H) * 0.85;
+        const rW = BUF_W * scaleF, rH = BUF_H * scaleF;
+        const fOx = (p.width  - rW) / 2 + mInfX;
+        const fOy = (p.height - rH) / 2 + mInfY;
+        const numSlices = p.floor(p.random(3, 10));
+        for (let i = 0; i < numSlices; i++) {
+          const sy = p.random(fOy, fOy + rH);
+          const sh = p.min(p.random(2, rH * 0.08), fOy + rH - sy);
+          glitchSlices.push({
+            y: sy, h: sh, fx: fOx, fw: rW,
+            offset: p.random(-80, 80) * glitchIntensity,
+            colorShift: p.random() < 0.4,
+            duration: p.random(0.08, 0.3)
+          });
+        }
+      }
+
+      function updateGlitch(dt) {
+        if (!glitchActive) return;
+        let allDone = true;
+        for (const s of glitchSlices) {
+          s.duration -= dt;
+          if (s.duration > 0) allDone = false;
+          else s.offset *= 0.7;
+        }
+        if (allDone) { glitchActive = false; glitchSlices = []; }
+      }
+
+      function drawGlitchOverlay() {
+        if (!glitchActive || !glitchSlices.length) return;
+        for (const s of glitchSlices) {
+          if (p.abs(s.offset) < 0.5) continue;
+          const sx = p.floor(s.fx), sy = p.floor(s.y), sw = p.floor(s.fw), sh = p.floor(s.h);
+          if (sw < 1 || sh < 1) continue;
+          if (s.colorShift) {
+            ctx.save();
+            ctx.globalAlpha = 0.7;
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.drawImage(ctx.canvas, sx, sy, sw, sh, sx + s.offset*1.5, sy, sw, sh);
+            ctx.globalAlpha = 0.45;
+            ctx.drawImage(ctx.canvas, sx, sy, sw, sh, sx - s.offset, sy, sw, sh);
+            ctx.restore();
+          } else {
+            ctx.drawImage(ctx.canvas, sx, sy, sw, sh, sx + s.offset, sy, sw, sh);
+          }
+        }
+      }
+
+      function drawFlowerToBuffer(f, bl, wl) {
+        buf.background(0);
+        buf.noStroke();
+        wl = wl || 0;
+        drawGrassOnBuffer();
+        updateAndDrawRabbits(buf, bl);
+        const stemProgress = p.constrain(bl * 3, 0, 1);
+        const flowerBloom  = p.constrain((bl - 0.15) / 0.85, 0, 1);
+        const wiltDroop    = wl * 55;
+        const flowerCX     = BUF_W / 2;
+        const flowerCY     = BUF_H * 0.38 + wiltDroop;
+        drawStem(buf, f, stemProgress, wl, flowerCX, flowerCY);
+        drawPeony3D(buf, f, flowerBloom, wl, flowerCX, flowerCY);
+        buf.loadPixels();
+      }
+
+      function drawStem(g, f, progress, wl, cx, cy) {
+        wl = wl || 0;
+        const stemLen = BUF_H * 0.42;
+        const stemX   = BUF_W / 2;
+        const stemTop = cy;
+        const stemBot = stemTop + stemLen;
+        const visibleLen = stemLen * easeOutQuart(progress);
+        const visibleTop = stemBot - visibleLen;
+        for (let y = visibleTop; y < stemBot; y += 3) {
+          const tt       = (y - stemTop) / stemLen;
+          const sw       = p.lerp(15, 8, tt);
+          const wiltBend = wl * 45 * (1 - tt) * p.sin((1 - tt) * p.PI);
+          const curveX   = p.sin(tt * p.PI * 0.3) * 22 + p.sin(tt * p.PI * 0.8) * 8 + wiltBend;
+          let r  = p.lerp(f.stemC[0], f.stemC[0] * 0.5, tt);
+          let gc = p.lerp(f.stemC[1], f.stemC[1] * 0.5, tt);
+          let b  = p.lerp(f.stemC[2], f.stemC[2] * 0.5, tt);
+          if (wl > 0) {
+            r  = p.lerp(r,  r  * 0.4 + 30, wl * 0.5);
+            gc = p.lerp(gc, gc * 0.3 + 15, wl * 0.5);
+            b  = p.lerp(b,  b  * 0.25 + 8, wl * 0.5);
+          }
+          g.fill(r, gc, b);
+          g.ellipse(stemX + curveX, y, sw, 5);
+          g.fill(r * 1.4, gc * 1.4, b * 1.3, 50);
+          g.ellipse(stemX + curveX - 2, y, sw * 0.2, 3);
+        }
+        if (progress > 0.3) {
+          const leafP = p.constrain((progress - 0.3) / 0.4, 0, 1);
+          const ly = stemTop + stemLen * 0.22;
+          const lx = stemX + p.sin(0.22 * p.PI * 0.3) * 22;
+          drawLeaf(g, lx, ly, -1, 48 * leafP, f.stemC);
+        }
+        if (progress > 0.5) {
+          const leafP = p.constrain((progress - 0.5) / 0.4, 0, 1);
+          const ly = stemTop + stemLen * 0.50;
+          const lx = stemX + p.sin(0.50 * p.PI * 0.3) * 22;
+          drawLeaf(g, lx, ly, 1, 42 * leafP, f.stemC);
+        }
+        if (progress > 0.7) {
+          const leafP = p.constrain((progress - 0.7) / 0.3, 0, 1);
+          const ly = stemTop + stemLen * 0.35;
+          const lx = stemX + p.sin(0.35 * p.PI * 0.3) * 22;
+          drawLeaf(g, lx, ly, -1, 35 * leafP, f.stemC);
+        }
+      }
+
+      function drawLeaf(g, x, y, side, sz, sc) {
+        if (sz < 2) return;
+        g.push(); g.translate(x, y); g.rotate(side * 0.65);
+        g.fill(sc[0]*0.85, sc[1]*1.15, sc[2]*0.75);
+        g.beginShape();
+        g.vertex(0, 0);
+        g.bezierVertex(sz*0.35*side, -sz*0.38, sz*0.85*side, -sz*0.22, sz*1.35*side, 0);
+        g.bezierVertex(sz*0.85*side,  sz*0.22,  sz*0.35*side, sz*0.38, 0, 0);
+        g.endShape(p.CLOSE);
+        g.fill(sc[0]*1.1, sc[1]*1.4, sc[2]*1.0, 60);
+        g.beginShape();
+        g.vertex(sz*0.1*side, 0);
+        g.bezierVertex(sz*0.4*side, -sz*0.15, sz*0.7*side, -sz*0.08, sz*1.0*side, 0);
+        g.bezierVertex(sz*0.7*side,  sz*0.08,  sz*0.4*side, sz*0.15,  sz*0.1*side, 0);
+        g.endShape(p.CLOSE);
+        g.stroke(sc[0]*1.3, sc[1]*1.5, sc[2]*1.2, 70);
+        g.strokeWeight(0.8);
+        g.line(0, 0, sz*1.15*side, 0);
+        for (let i = 1; i <= 3; i++) {
+          const vx = sz * 0.3 * i * side;
+          g.line(vx, 0, vx + sz*0.2*side, -sz*0.12);
+          g.line(vx, 0, vx + sz*0.2*side,  sz*0.12);
+        }
+        g.noStroke(); g.pop();
+      }
+
+      function rot3D(x, y, z) {
+        const cY = p.cos(rotY), sY = p.sin(rotY);
+        const rx  = x*cY + z*sY;
+        const rz  = -x*sY + z*cY;
+        const cX  = p.cos(rotX), sX = p.sin(rotX);
+        const ry  = y*cX - rz*sX;
+        const rz2 = y*sX + rz*cX;
+        const cZ  = p.cos(rotZ), sZ = p.sin(rotZ);
+        const fx  = rx*cZ - ry*sZ;
+        const fy  = rx*sZ + ry*cZ;
+        return [fx, fy, rz2];
+      }
+
+      function drawPeony3D(g, f, bl, wl, cx, cy) {
+        wl = wl || 0;
+        const focal    = 420;
+        const wiltTilt = wl * 0.18;
+        const cosW = p.cos(wiltTilt), sinW = p.sin(wiltTilt);
+        const items = [];
+
+        if (f.sepals && bl < 0.7) {
+          const numS    = f.sepals;
+          const openAng = easeInOutCubic(bl) * p.HALF_PI * 0.9;
+          let sepalAlpha = p.map(p.constrain(bl, 0, 0.7), 0, 0.7, 255, 0);
+          if (wl) sepalAlpha *= (1 - wl);
+          if (sepalAlpha > 5) {
+            for (let i = 0; i < numS; i++) {
+              const a      = (p.TWO_PI / numS) * i;
+              const sTilt  = p.HALF_PI * 0.35 - openAng;
+              const dist   = 50;
+              const ct = p.cos(sTilt), st = p.sin(sTilt);
+              const x3 = p.cos(a)*dist*ct, z3 = p.sin(a)*dist*ct, y3 = -st*dist;
+              const [rx, ry, rz] = rot3D(x3, y3, z3);
+              const ps     = focal / (focal + rz);
+              const sepAng = p.atan2(ry, rx);
+              const fv     = p.max(focal / (focal + p.abs(rz)), 0.15);
+              items.push({ rz, tp:'s', sx:rx*ps, sy:ry*ps, sa:sepAng,
+                sLen:80*ps, sW:25*ps*fv, sAlpha:sepalAlpha, sc:f.stemC });
+            }
+          }
+        }
+
+        const cAlpha = p.constrain((bl - 0.45) / 0.3, 0, 1) * (1 - wl);
+        if (cAlpha > 0) items.push({ rz:0, tp:'c', sx:0, sy:0, sa:0, alpha:cAlpha });
+
+        for (let layer = f.layers; layer >= 0; layer--) {
+          const lr         = layer / f.layers;
+          const layerDelay = (1 - lr) * 0.35;
+          const layerBl    = p.constrain((bl - layerDelay) / (1 - layerDelay), 0, 1);
+          const ebl        = easeInOutCubic(layerBl);
+          if (ebl < 0.01) continue;
+          const layerFall = p.constrain((wl * 1.4 - (1 - lr) * 0.4) / 0.6, 0, 1);
+          if (layerFall > 0.9) continue;
+          const innerBoost = (1 - lr);
+          const np         = f.petalsPerLayer + p.floor(layer * 1.5) + p.floor(innerBoost * 5);
+          const baseR      = p.lerp(10, f.maxRadius, lr);
+          let tiltAngle    = p.lerp(p.PI * 0.42, p.PI * 0.04, ebl) + layerFall * p.PI * 0.22;
+          tiltAngle -= innerBoost * 0.15 * ebl;
+          const cosTilt = p.cos(tiltAngle), sinTilt = p.sin(tiltAngle);
+
+          for (let i = 0; i < np; i++) {
+            const petalHash = ((i * 73 + layer * 137) & 0xFF) / 255;
+            if (wl > 0.1 && petalHash < (wl - 0.1) * 1.3) continue;
+            let angle = (p.TWO_PI / np) * i + layer * 0.42 + p.sin(layer * 2.1) * 0.12;
+            angle += petalHash * 0.15;
+            const droopAmt = layerFall * 0.5 * (0.4 + lr * 0.6);
+            const shrink   = 1 - layerFall * 0.35;
+            const dist     = baseR * ebl * (0.35 + lr * 0.25);
+            let x3 = p.cos(angle)*dist*cosTilt, z3 = p.sin(angle)*dist*cosTilt, y3 = -sinTilt*dist + droopAmt*28;
+            if (wiltTilt > 0.001) {
+              const ny = y3*cosW - x3*sinW*0.3;
+              x3 = x3 + y3*sinW*0.3; y3 = ny;
+            }
+            const [rx, ry, rz] = rot3D(x3, y3, z3);
+            const ps         = focal / (focal + rz);
+            const sx         = rx * ps, sy = ry * ps;
+            const viewAngle  = p.atan2(ry, rx);
+            const depthFactor = focal / (focal + p.abs(rz));
+            const faceVis    = p.max(depthFactor, 0.12);
+            const nx3 = p.cos(angle)*cosTilt, ny3 = -sinTilt, nz3 = p.sin(angle)*cosTilt;
+            const [,,lnz] = rot3D(nx3, ny3, nz3);
+            const lightDot = p.constrain(-lnz, -1, 1);
+            const lightMod = p.map(lightDot, -1, 1, 0.32, 1.25);
+            const cupFactor = (1 - lr) * (1 - ebl * 0.5) * 0.35;
+            const pl = baseR * (0.2 + 0.8*ebl) * (1.15 + innerBoost*0.3) * shrink * ps;
+            let pw = baseR * (0.15 + 0.85*ebl) * 0.55 * shrink * ps * faceVis;
+            pw *= (1 + cupFactor);
+            const rPhase = i*1.7 + layer*0.9;
+            const rAmt   = f.ruffleAmt * ebl * (1 + layerFall*2 + innerBoost*0.5) * ps;
+            const lA     = p.sin(angle + layer*0.5);
+            const dM     = p.map(layer, 0, f.layers, 0.35, 1.0);
+            const bB     = 0.4 + 0.6*ebl;
+            const cm     = p.map(lA, -1, 1, 0.45, 1.2) * dM * bB * lightMod;
+            let r  = p.constrain(p.lerp(f.c1[0], f.c2[0], lr) * cm, 0, 255);
+            let gr = p.constrain(p.lerp(f.c1[1], f.c2[1], lr) * cm, 0, 255);
+            let b  = p.constrain(p.lerp(f.c1[2], f.c2[2], lr) * cm, 0, 255);
+            if (wl > 0) {
+              const wf = p.min(1, layerFall * 1.3);
+              r  = p.lerp(r,  r  * 0.5 + 55, wf);
+              gr = p.lerp(gr, gr * 0.28 + 22, wf);
+              b  = p.lerp(b,  b  * 0.12 + 6,  wf);
+            }
+            items.push({ rz, tp:'p', sx, sy, sa:viewAngle, pl, pw, rPhase, rAmt, r, gr, b, cup:cupFactor });
+          }
+        }
+
+        items.sort((a, b) => a.rz - b.rz);
+
+        for (const it of items) {
+          if (it.tp === 'c') {
+            g.push(); g.translate(cx, cy);
+            const [cnx, cny, cnz] = rot3D(0, -1, 0);
+            const cps = focal / (focal + cnz*15);
+            const csx = cnx*15*cps, csy = cny*15*cps;
+            for (let r = 28; r > 0; r -= 3) {
+              const ratio = r / 28;
+              g.fill(
+                p.lerp(f.c3[0]*0.1, f.c3[0]*0.7, ratio) * (it.alpha||1),
+                p.lerp(f.c3[1]*0.1, f.c3[1]*0.7, ratio) * (it.alpha||1),
+                p.lerp(f.c3[2]*0.1, f.c3[2]*0.7, ratio) * (it.alpha||1)
+              );
+              g.ellipse(csx, csy, r*2.2*cps, r*2.2*cps);
+            }
+            if (bl > 0.65) {
+              const sa2 = p.constrain((bl - 0.65) / 0.25, 0, 1) * (1 - wl);
+              for (let i = 0; i < 22; i++) {
+                const a   = (p.TWO_PI / 22) * i;
+                const d   = 6 + (i % 5) * 3;
+                const stX = p.cos(a)*d*sa2, stZ = p.sin(a)*d*sa2, stY = -3;
+                const [srx, sry, srz] = rot3D(stX, stY, stZ);
+                const stP = focal / (focal + srz);
+                g.fill(f.c2[0]*0.7, f.c2[1]*0.5, f.c2[2]*0.3, 140*sa2);
+                g.ellipse(srx*stP, sry*stP, 2.5*stP, 2.5*stP);
+              }
+            }
+            g.pop();
+
+          } else if (it.tp === 's') {
+            if (!it.sW || it.sW < 1) continue;
+            g.push(); g.translate(cx + it.sx, cy + it.sy); g.rotate(it.sa);
+            g.fill(it.sc[0]*0.7, it.sc[1]*1.0, it.sc[2]*0.6, it.sAlpha);
+            g.beginShape();
+            g.vertex(0, 0);
+            g.bezierVertex(it.sLen*0.3, -it.sW*0.6, it.sLen*0.7, -it.sW*0.4, it.sLen, 0);
+            g.bezierVertex(it.sLen*0.7,  it.sW*0.4,  it.sLen*0.3,  it.sW*0.6, 0, 0);
+            g.endShape(p.CLOSE);
+            g.pop();
+
+          } else {
+            if (!it.pw || it.pw < 0.5) continue;
+            g.push(); g.translate(cx + it.sx, cy + it.sy); g.rotate(it.sa);
+            g.fill(it.r, it.gr, it.b);
+            g.beginShape();
+            for (let tt = 0; tt <= 1; tt += 0.07) {
+              const px  = tt * it.pl;
+              const bW  = p.sin(tt * p.PI) * it.pw;
+              const cup = p.sin(tt * p.PI) * (it.cup||0) * it.pw * 0.6;
+              const ruf = p.sin(tt*8 + it.rPhase) * it.rAmt * tt;
+              g.vertex(px, bW + ruf + cup);
+            }
+            for (let tt = 1; tt >= 0; tt -= 0.07) {
+              const px  = tt * it.pl;
+              const bW  = p.sin(tt * p.PI) * it.pw;
+              const cup = p.sin(tt * p.PI) * (it.cup||0) * it.pw * 0.4;
+              const ruf = p.sin(tt*8 + it.rPhase + p.PI) * it.rAmt * tt;
+              g.vertex(px, -bW + ruf - cup);
+            }
+            g.endShape(p.CLOSE);
+            g.pop();
+          }
+        }
+      }
+
+      function initRabbitsAndGrass() {
+        const positions = [
+          { x: BUF_W * 0.18, y: BUF_H * 0.72 },
+          { x: BUF_W * 0.82, y: BUF_H * 0.68 },
+          { x: BUF_W * 0.12, y: BUF_H * 0.85 },
+          { x: BUF_W * 0.88, y: BUF_H * 0.82 },
+        ];
+        const cols = [
+          [220, 200, 185], [200, 185, 170], [235, 215, 200], [210, 195, 180]
+        ];
+        for (let i = 0; i < 4; i++) {
+          rabbits.push({
+            x: positions[i].x, y: positions[i].y,
+            homeX: positions[i].x, homeY: positions[i].y,
+            targetX: positions[i].x, targetY: positions[i].y,
+            col: cols[i], sc: p.random(0.6, 0.9),
+            baseSc: 0, state: 'walking', stateTimer: p.random(5, 12),
+            walkAngle: p.random(100), speed: p.random(0.3, 0.6),
+            headAngle: 0, earAngle: 0, bodyBob: 0,
+            jawAngle: 0, jumpTimer: 0, jumpY: 0,
+            facing: p.random() > 0.5 ? 1 : -1,
+            restTimer: 0, nearGrass: null,
+            approachTimer: p.random(15, 30),
+            isApproaching: false, approachPhase: 'idle',
+            approachAction: 0, approachActionTimer: 0,
+            cleanPawAngle: 0, standUp: 0,
+          });
+          rabbits[i].baseSc = rabbits[i].sc;
+        }
+        for (let i = 0; i < 60; i++) {
+          const gx = p.random(30, BUF_W - 30);
+          const gy = p.random(BUF_H * 0.55, BUF_H * 0.95);
+          const dx = gx - BUF_W / 2, dy = gy - BUF_H * 0.5;
+          if (Math.sqrt(dx * dx + dy * dy) < CENTER_EXCL_R + 40) continue;
+          grassBlades.push({
+            x: gx, y: gy,
+            h: p.random(8, 18),
+            eaten: false, regrowTimer: 0,
+            wobble: p.random(p.TWO_PI),
+            lean: p.random(-0.2, 0.2),
+          });
+        }
+      }
+
+      function drawGrassOnBuffer() {
+        for (const g of grassBlades) {
+          if (g.eaten) continue;
+          g.wobble += 0.02;
+          const sway = p.sin(g.wobble + g.x * 0.01) * 2;
+          buf.stroke(50 + p.random(-5, 5), 130 + p.random(-10, 10), 40, 160);
+          buf.strokeWeight(1.2);
+          buf.noFill();
+          buf.beginShape();
+          buf.vertex(g.x, g.y);
+          buf.quadraticVertex(g.x + sway + g.lean * 5, g.y - g.h * 0.6, g.x + sway * 1.5 + g.lean * 10, g.y - g.h);
+          buf.endShape();
+          buf.noStroke();
+        }
+      }
+
+      function updateAndDrawRabbits(g, bl) {
+        if (bl < 0.05) return;
+        const rabbitAlpha = p.constrain(bl * 2, 0, 1);
+        const scaleF = p.min(p.width / BUF_W, p.height / BUF_H) * 0.85;
+        const ox = (p.width - BUF_W * scaleF) / 2 + mInfX;
+        const oy = (p.height - BUF_H * scaleF) / 2 + mInfY;
+        const mx = (p.mouseX - ox) / scaleF;
+        const my = (p.mouseY - oy) / scaleF;
+
+        let anyApproaching = false;
+        for (const rb of rabbits) { if (rb.isApproaching) anyApproaching = true; }
+
+        for (const rb of rabbits) {
+          if (rb.isApproaching) {
+            updateRabbitApproach(rb, mx, my);
+          } else {
+            rb.approachTimer -= 0.016;
+            if (rb.approachTimer <= 0 && !anyApproaching && rb.state === 'walking') {
+              startRabbitApproach(rb);
+              anyApproaching = true;
+            }
+
+            rb.stateTimer -= 0.016;
+            if (rb.stateTimer <= 0 && rb.state !== 'jumping') changeRabbitState(rb);
+
+            if (rb.state === 'walking') {
+              const ddx = rb.targetX - rb.x, ddy = rb.targetY - rb.y;
+              const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+              if (dist < 8) {
+                rb.targetX = pickRabbitTargetX(rb);
+                rb.targetY = pickRabbitTargetY(rb);
+              } else {
+                rb.x += (ddx / dist) * rb.speed;
+                rb.y += (ddy / dist) * rb.speed * 0.4;
+                rb.facing = ddx > 0 ? 1 : -1;
+              }
+              rb.walkAngle += 0.08;
+              rb.bodyBob = p.sin(rb.walkAngle) * 2;
+              rb.earAngle = p.sin(rb.walkAngle * 0.5) * 0.15;
+              rb.headAngle = p.sin(rb.walkAngle * 0.8) * 0.1;
+
+              const mdx = rb.x - mx, mdy = rb.y - my;
+              const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+              if (mDist < 80 && mDist > 0) {
+                rb.x += (mdx / mDist) * 2.5;
+                rb.y += (mdy / mDist) * 1.5;
+              }
+            } else if (rb.state === 'eating') {
+              rb.walkAngle += 0.03;
+              rb.headAngle = p.min(rb.headAngle + 0.03, 0.7);
+              rb.jawAngle = p.sin(rb.walkAngle * 6) * 0.12;
+              rb.earAngle = p.sin(rb.walkAngle * 2) * 0.08;
+              rb.bodyBob = p.sin(rb.walkAngle * 0.5) * 0.5;
+              if (rb.nearGrass && !rb.nearGrass.eaten) {
+                if (rb.headAngle > 0.5) {
+                  rb.nearGrass.eaten = true;
+                  rb.nearGrass.regrowTimer = p.random(8, 15);
+                }
+              }
+            } else if (rb.state === 'resting') {
+              rb.restTimer += 0.016;
+              rb.bodyBob = p.sin(rb.restTimer * 0.8) * 1;
+              rb.earAngle = p.sin(rb.restTimer * 0.4) * 0.3 - 0.2;
+              rb.headAngle = p.sin(rb.restTimer * 0.6) * 0.1;
+              rb.jawAngle = 0;
+            } else if (rb.state === 'jumping') {
+              rb.jumpTimer += 0.016;
+              rb.jumpY = -25 * p.sin(rb.jumpTimer * 5) * Math.max(0, 1 - rb.jumpTimer * 1.5);
+              rb.walkAngle += 0.15;
+              rb.earAngle = p.sin(rb.jumpTimer * 8) * 0.3;
+              if (rb.jumpTimer > 0.8) {
+                rb.state = 'walking';
+                rb.stateTimer = p.random(4, 8);
+                rb.jumpTimer = 0;
+                rb.jumpY = 0;
+                rb.targetX = pickRabbitTargetX(rb);
+                rb.targetY = pickRabbitTargetY(rb);
+              }
+            }
+
+            rb.x = p.constrain(rb.x, 30, BUF_W - 30);
+            rb.y = p.constrain(rb.y, BUF_H * 0.5, BUF_H * 0.95);
+          }
+        }
+
+        for (const grass of grassBlades) {
+          if (grass.eaten) {
+            grass.regrowTimer -= 0.016;
+            if (grass.regrowTimer <= 0) grass.eaten = false;
+          }
+        }
+
+        updateHearts();
+
+        const sorted = [...rabbits].sort((a, b) => a.y - b.y);
+        for (const rb of sorted) {
+          if (rb.isApproaching && rb.approachPhase !== 'walking_in' && rb.approachPhase !== 'walking_out') {
+            drawRabbitShadow(g, rb);
+            drawRabbitOnBuffer(g, rb, rabbitAlpha);
+            drawApproachHearts(g, rb);
+          } else {
+            drawRabbitOnBuffer(g, rb, rabbitAlpha);
+          }
+        }
+      }
+
+      function startRabbitApproach(rb) {
+        rb.isApproaching = true;
+        rb.approachPhase = 'walking_in';
+        rb.approachTimer = p.random(15, 30);
+        rb.approachAction = p.floor(p.random(4));
+        rb.approachActionTimer = 0;
+        rb.cleanPawAngle = 0;
+        rb.standUp = 0;
+
+        const angle = p.random(p.TWO_PI);
+        const dist = p.random(70, 110);
+        rb.targetX = BUF_W / 2 + p.cos(angle) * dist;
+        rb.targetY = BUF_H * 0.65 + p.sin(angle) * dist * 0.3;
+      }
+
+      function updateRabbitApproach(rb, mx, my) {
+        rb.walkAngle += 0.06;
+        rb.approachActionTimer += 0.016;
+
+        const mdx = rb.x - mx, mdy = rb.y - my;
+        const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+        if (mDist < 50 && mDist > 0) {
+          rb.x += (mdx / mDist) * 4;
+          rb.y += (mdy / mDist) * 2;
+          rb.facing = mdx > 0 ? 1 : -1;
+          rb.jumpY = -10;
+          rb.earAngle = p.sin(rb.approachActionTimer * 12) * 0.4;
+          return;
+        }
+        rb.jumpY *= 0.9;
+
+        if (rb.approachPhase === 'walking_in') {
+          const ddx = rb.targetX - rb.x, ddy = rb.targetY - rb.y;
+          const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+          rb.facing = ddx > 0 ? 1 : -1;
+          if (dist > 15) {
+            rb.x += (ddx / dist) * rb.speed * 1.8;
+            rb.y += (ddy / dist) * rb.speed * 0.6;
+            rb.sc = p.lerp(rb.sc, rb.baseSc * 2.8, 0.02);
+            rb.bodyBob = p.sin(rb.walkAngle) * 3;
+            rb.earAngle = p.sin(rb.walkAngle * 0.5) * 0.2;
+            rb.headAngle = p.sin(rb.walkAngle * 0.8) * 0.15;
+          } else {
+            rb.approachPhase = 'close';
+            rb.approachActionTimer = 0;
+          }
+        } else if (rb.approachPhase === 'close') {
+          rb.sc = p.lerp(rb.sc, rb.baseSc * 2.8, 0.05);
+          rb.bodyBob = p.sin(rb.walkAngle * 0.3) * 1.5;
+          rb.earAngle = p.sin(rb.approachActionTimer * 1.5) * 0.2;
+
+          if (rb.approachAction === 0) {
+            rb.bodyBob = -4;
+            rb.earAngle = 0.35;
+            rb.headAngle = p.sin(rb.approachActionTimer * 2) * 0.25;
+            rb.cleanPawAngle = p.sin(rb.approachActionTimer * 3) * 0.35;
+          } else if (rb.approachAction === 1) {
+            rb.standUp = p.min(rb.standUp + 0.03, 1);
+            rb.bodyBob = rb.standUp * 14;
+            rb.earAngle = -0.15 + p.sin(rb.approachActionTimer * 2) * 0.1;
+            rb.headAngle = p.sin(rb.approachActionTimer * 1.2) * 0.2;
+          } else if (rb.approachAction === 2) {
+            rb.jumpTimer += 0.04;
+            rb.jumpY = -18 * p.abs(p.sin(rb.jumpTimer * 4));
+            rb.earAngle = p.sin(rb.jumpTimer * 6) * 0.3;
+            rb.headAngle = p.sin(rb.jumpTimer * 3) * 0.15;
+          } else {
+            rb.headAngle = p.sin(rb.approachActionTimer * 2) * 0.3;
+            rb.earAngle = p.sin(rb.approachActionTimer * 1.8) * 0.25;
+            rb.bodyBob = p.sin(rb.approachActionTimer * 1.5) * 2;
+            rb.cleanPawAngle = p.sin(rb.approachActionTimer * 4) * 0.3;
+          }
+
+          if (rb.approachActionTimer > p.random(3, 5)) {
+            rb.approachPhase = 'walking_out';
+            rb.standUp = 0;
+          }
+        } else if (rb.approachPhase === 'walking_out') {
+          const ddx = rb.homeX - rb.x, ddy = rb.homeY - rb.y;
+          const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+          rb.facing = ddx > 0 ? 1 : -1;
+          if (dist > 15) {
+            rb.x += (ddx / dist) * rb.speed * 1.5;
+            rb.y += (ddy / dist) * rb.speed * 0.5;
+            rb.sc = p.lerp(rb.sc, rb.baseSc, 0.025);
+            rb.bodyBob = p.sin(rb.walkAngle) * 2.5;
+            rb.earAngle = p.sin(rb.walkAngle * 0.5) * 0.18;
+            rb.headAngle = p.sin(rb.walkAngle * 0.8) * 0.12;
+            rb.standUp *= 0.95;
+          } else {
+            rb.isApproaching = false;
+            rb.approachPhase = 'idle';
+            rb.sc = rb.baseSc;
+            rb.approachTimer = p.random(15, 30);
+            rb.state = 'walking';
+            rb.stateTimer = p.random(5, 10);
+            rb.targetX = pickRabbitTargetX(rb);
+            rb.targetY = pickRabbitTargetY(rb);
+            rb.jumpY = 0;
+            rb.standUp = 0;
+            rb.cleanPawAngle = 0;
+          }
+        }
+
+        rb.x = p.constrain(rb.x, 30, BUF_W - 30);
+        rb.y = p.constrain(rb.y, BUF_H * 0.45, BUF_H * 0.95);
+      }
+
+      function drawRabbitShadow(g, rb) {
+        const shadowW = 30 * rb.sc;
+        const shadowH = 8 * rb.sc;
+        const sy = rb.y + 22 * rb.sc + rb.jumpY * 0.3;
+        g.fill(0, 0, 0, 35);
+        g.ellipse(rb.x, sy, shadowW, shadowH);
+      }
+
+      function drawApproachHearts(g, rb) {
+        if (rb.approachPhase !== 'close') return;
+        const numH = 6;
+        for (let i = 0; i < numH; i++) {
+          const a = (p.TWO_PI / numH) * i + rb.approachActionTimer * 0.8;
+          const hr = 28 + p.sin(rb.approachActionTimer * 2 + i) * 8;
+          const hx = rb.x + p.cos(a) * hr;
+          const hy = rb.y - 30 * rb.sc + p.sin(a) * hr * 0.5 - 10;
+          const hsize = 4 + p.sin(rb.approachActionTimer * 3 + i * 1.5) * 1.5;
+          g.fill(255, 120, 160, 140 + p.sin(rb.approachActionTimer * 2 + i) * 40);
+          g.noStroke();
+          g.push();
+          g.translate(hx, hy);
+          g.beginShape();
+          g.vertex(0, hsize * 0.3);
+          g.bezierVertex(-hsize * 0.5, -hsize * 0.1, -hsize * 0.5, -hsize * 0.6, 0, -hsize * 0.3);
+          g.bezierVertex(hsize * 0.5, -hsize * 0.6, hsize * 0.5, -hsize * 0.1, 0, hsize * 0.3);
+          g.endShape(p.CLOSE);
+          g.pop();
+        }
+      }
+
+      function updateHearts() {}
+
+      function changeRabbitState(rb) {
+        const roll = p.random();
+        if (rb.state === 'walking') {
+          if (roll < 0.35) {
+            rb.state = 'eating';
+            rb.stateTimer = p.random(3, 6);
+            rb.headAngle = 0;
+            rb.nearGrass = findNearestGrass(rb);
+          } else if (roll < 0.6) {
+            rb.state = 'resting';
+            rb.stateTimer = p.random(4, 8);
+            rb.restTimer = 0;
+          } else {
+            rb.stateTimer = p.random(5, 12);
+            rb.targetX = pickRabbitTargetX(rb);
+            rb.targetY = pickRabbitTargetY(rb);
+          }
+        } else {
+          rb.state = 'walking';
+          rb.stateTimer = p.random(5, 12);
+          rb.targetX = pickRabbitTargetX(rb);
+          rb.targetY = pickRabbitTargetY(rb);
+          rb.headAngle = 0;
+        }
+      }
+
+      function pickRabbitTargetX(rb) {
+        for (let tries = 0; tries < 20; tries++) {
+          const tx = p.random(40, BUF_W - 40);
+          const dx = tx - BUF_W / 2;
+          if (Math.abs(dx) > CENTER_EXCL_R - 20) return tx;
+        }
+        return rb.x > BUF_W / 2 ? BUF_W * 0.8 : BUF_W * 0.2;
+      }
+
+      function pickRabbitTargetY(rb) {
+        return p.random(BUF_H * 0.55, BUF_H * 0.9);
+      }
+
+      function findNearestGrass(rb) {
+        let best = null, bestD = Infinity;
+        for (const g of grassBlades) {
+          if (g.eaten) continue;
+          const d = Math.abs(g.x - rb.x) + Math.abs(g.y - rb.y) * 0.5;
+          if (d < bestD) { bestD = d; best = g; }
+        }
+        return best;
+      }
+
+      function drawRabbitOnBuffer(g, rb, alpha) {
+        const sc = rb.sc;
+        const isClose = rb.isApproaching && rb.approachPhase === 'close';
+        const bx = rb.x, by = rb.y + rb.bodyBob + rb.jumpY;
+        const a = alpha * 255;
+        const r = rb.col[0], gc = rb.col[1], b = rb.col[2];
+        const facing = rb.facing;
+        const eatingDip = rb.state === 'eating' ? rb.headAngle * 12 : 0;
+        const restDip = rb.state === 'resting' ? 6 : 0;
+        const legPhase = rb.state === 'walking' || rb.isApproaching ? rb.walkAngle : 0;
+        const jawOff = rb.jawAngle || 0;
+        const standOff = rb.standUp || 0;
+        const cleanPaw = rb.cleanPawAngle || 0;
+
+        g.noStroke();
+
+        if (!isClose) {
+          g.fill(0, 0, 0, 25);
+          g.ellipse(bx, by + 20 * sc, 28 * sc, 6 * sc);
+        }
+
+        const legY = by + 14 * sc + restDip - standOff * 6;
+        const legKick1 = p.sin(legPhase) * 4 * sc;
+        const legKick2 = p.sin(legPhase + p.PI) * 4 * sc;
+        g.fill(r * 0.8, gc * 0.8, b * 0.8, a * 0.6);
+        g.ellipse(bx - 7 * sc * facing, legY, 7 * sc, 10 * sc);
+        g.ellipse(bx + 5 * sc * facing, legY, 7 * sc, 10 * sc);
+        g.fill(r * 0.75, gc * 0.75, b * 0.75, a * 0.7);
+        g.ellipse(bx - 7 * sc * facing, legY + 4 * sc + legKick1, 8 * sc, 5 * sc);
+        g.ellipse(bx + 5 * sc * facing, legY + 4 * sc + legKick2, 8 * sc, 5 * sc);
+
+        if (isClose && rb.approachAction === 0) {
+          const pawY = by - 10 * sc - standOff * 6;
+          g.fill(r * 0.85, gc * 0.85, b * 0.85, a);
+          g.ellipse(bx + 6 * sc * facing, pawY + p.sin(cleanPaw) * 6 * sc, 5 * sc, 5 * sc);
+          g.ellipse(bx + 3 * sc * facing, pawY + p.sin(cleanPaw + 0.5) * 5 * sc - 3 * sc, 4 * sc, 4 * sc);
+        }
+
+        const bodyOffY = -standOff * 10;
+        g.fill(r, gc, b, a);
+        g.push();
+        g.translate(bx, by + restDip + bodyOffY);
+        g.scale(facing, 1);
+        g.beginShape();
+        g.vertex(-12 * sc, 2 * sc);
+        g.bezierVertex(-14 * sc, -8 * sc, -10 * sc, -18 * sc, 0, -20 * sc);
+        g.bezierVertex(10 * sc, -18 * sc, 14 * sc, -8 * sc, 12 * sc, 2 * sc);
+        g.bezierVertex(10 * sc, 10 * sc, -10 * sc, 10 * sc, -12 * sc, 2 * sc);
+        g.endShape(p.CLOSE);
+        g.fill(r * 1.15, gc * 1.1, b * 1.05, a * 0.5);
+        g.ellipse(0, -4 * sc, 14 * sc, 12 * sc);
+        g.pop();
+
+        if (isClose) {
+          const frLegY = by + 12 * sc + bodyOffY;
+          g.fill(r * 0.82, gc * 0.82, b * 0.82, a * 0.7);
+          g.ellipse(bx + 8 * sc * facing, frLegY, 5 * sc, 8 * sc);
+          g.ellipse(bx - 2 * sc * facing, frLegY, 5 * sc, 8 * sc);
+        }
+
+        const headX = bx + 14 * sc * facing;
+        const headY = by - 14 * sc - eatingDip + restDip * 0.5 + rb.headAngle * 8 + bodyOffY;
+        g.fill(r * 1.05, gc * 1.02, b, a);
+        g.ellipse(headX, headY, 14 * sc, 13 * sc);
+        g.fill(r * 1.2, gc * 1.15, b * 1.1, a * 0.4);
+        g.ellipse(headX + 2 * sc * facing, headY + 1 * sc, 8 * sc, 7 * sc);
+
+        if (isClose) {
+          g.fill(255, 180, 200, a * 0.35);
+          g.ellipse(headX - 5 * sc * facing, headY + 3 * sc, 7 * sc, 5 * sc);
+          g.ellipse(headX + 5 * sc * facing, headY + 3 * sc, 7 * sc, 5 * sc);
+        }
+
+        const earBaseX = headX + 1 * sc * facing;
+        const earBaseY = headY - 8 * sc;
+        const earWig = rb.earAngle;
+        g.fill(r * 0.95, gc * 0.95, b * 0.95, a);
+        g.push();
+        g.translate(earBaseX - 3 * sc * facing, earBaseY);
+        g.rotate(-0.15 + earWig);
+        g.beginShape();
+        g.vertex(0, 0);
+        g.bezierVertex(-3 * sc, -6 * sc, -2.5 * sc, -18 * sc, 0, -26 * sc);
+        g.bezierVertex(2.5 * sc, -18 * sc, 3 * sc, -6 * sc, 0, 0);
+        g.endShape(p.CLOSE);
+        g.fill(r * 1.1, gc * 0.85, b * 0.8, a * 0.45);
+        g.beginShape();
+        g.vertex(0, -3 * sc);
+        g.bezierVertex(-1.5 * sc, -8 * sc, -1.2 * sc, -17 * sc, 0, -23 * sc);
+        g.bezierVertex(1.2 * sc, -17 * sc, 1.5 * sc, -8 * sc, 0, -3 * sc);
+        g.endShape(p.CLOSE);
+        g.pop();
+
+        g.fill(r * 0.95, gc * 0.95, b * 0.95, a);
+        g.push();
+        g.translate(earBaseX + 3 * sc * facing, earBaseY);
+        g.rotate(0.15 - earWig);
+        g.beginShape();
+        g.vertex(0, 0);
+        g.bezierVertex(-3 * sc, -6 * sc, -2.5 * sc, -18 * sc, 0, -26 * sc);
+        g.bezierVertex(2.5 * sc, -18 * sc, 3 * sc, -6 * sc, 0, 0);
+        g.endShape(p.CLOSE);
+        g.fill(r * 1.1, gc * 0.85, b * 0.8, a * 0.45);
+        g.beginShape();
+        g.vertex(0, -3 * sc);
+        g.bezierVertex(-1.5 * sc, -8 * sc, -1.2 * sc, -17 * sc, 0, -23 * sc);
+        g.bezierVertex(1.2 * sc, -17 * sc, 1.5 * sc, -8 * sc, 0, -3 * sc);
+        g.endShape(p.CLOSE);
+        g.pop();
+
+        const eyeScale = isClose ? 2.2 : 1;
+        const eyeOffX = 3 * sc * facing;
+        const eyeOffY = -2 * sc;
+        g.fill(255, 255, 255, a);
+        g.ellipse(headX + eyeOffX - 2 * sc * facing, headY + eyeOffY, 3.5 * sc * eyeScale, 4 * sc * eyeScale);
+        g.ellipse(headX + eyeOffX + 2 * sc * facing, headY + eyeOffY, 3.5 * sc * eyeScale, 4 * sc * eyeScale);
+        g.fill(30, 25, 40, a);
+        g.ellipse(headX + eyeOffX - 1.5 * sc * facing, headY + eyeOffY + 0.3 * sc, 2.5 * sc * eyeScale, 3 * sc * eyeScale);
+        g.ellipse(headX + eyeOffX + 2.5 * sc * facing, headY + eyeOffY + 0.3 * sc, 2.5 * sc * eyeScale, 3 * sc * eyeScale);
+        g.fill(255, 255, 255, a * 0.85);
+        g.ellipse(headX + eyeOffX - 2 * sc * facing, headY + eyeOffY - 0.8 * sc, 1.2 * sc * eyeScale, 1.2 * sc * eyeScale);
+        g.ellipse(headX + eyeOffX + 2 * sc * facing, headY + eyeOffY - 0.8 * sc, 1.2 * sc * eyeScale, 1.2 * sc * eyeScale);
+
+        if (isClose) {
+          g.fill(255, 150, 180, a * 0.85);
+          g.push();
+          g.translate(headX + 5 * sc * facing, headY + 1.5 * sc);
+          g.beginShape();
+          g.vertex(0, -2.5 * sc);
+          g.vertex(-3 * sc, 1.5 * sc);
+          g.vertex(3 * sc, 1.5 * sc);
+          g.endShape(p.CLOSE);
+          g.pop();
+
+          g.stroke(200, 200, 210, a * 0.45);
+          g.strokeWeight(0.6);
+          g.line(headX + 6 * sc * facing, headY + 1 * sc, headX + 18 * sc * facing, headY - 2 * sc);
+          g.line(headX + 6 * sc * facing, headY + 2 * sc, headX + 18 * sc * facing, headY + 2 * sc);
+          g.line(headX + 6 * sc * facing, headY + 3 * sc, headX + 17 * sc * facing, headY + 6 * sc);
+          g.line(headX - 2 * sc * facing, headY + 1 * sc, headX - 14 * sc * facing, headY - 2 * sc);
+          g.line(headX - 2 * sc * facing, headY + 2 * sc, headX - 14 * sc * facing, headY + 2 * sc);
+          g.line(headX - 2 * sc * facing, headY + 3 * sc, headX - 13 * sc * facing, headY + 6 * sc);
+          g.noStroke();
+        } else {
+          g.fill(r * 0.7, gc * 0.5, b * 0.5, a * 0.7);
+          g.ellipse(headX + 5 * sc * facing, headY + 2 * sc + jawOff * 2, 2 * sc, 1.5 * sc);
+          g.fill(r * 0.65, gc * 0.45, b * 0.45, a * 0.5);
+          g.arc(headX + 4 * sc * facing, headY + 3.5 * sc + jawOff * 3, 4 * sc, 2.5 * sc, 0, p.PI * (0.5 + jawOff));
+        }
+
+        g.fill(r * 1.3, gc * 1.2, b * 1.15, a * 0.85);
+        g.ellipse(bx - 13 * sc * facing, by + 2 * sc + restDip + bodyOffY, 6 * sc, 5.5 * sc);
+        g.fill(r * 1.5, gc * 1.4, b * 1.3, a * 0.35);
+        g.ellipse(bx - 13 * sc * facing - 1 * sc, by + 1.5 * sc + restDip + bodyOffY, 3 * sc, 2.5 * sc);
+      }
+
+      function renderToScreen() {
+        const px      = buf.pixels;
+        const g       = p.max(4, p.round(grid));
+        const asciiG  = p.max(g, 6);
+        const scaleF  = p.min(p.width / BUF_W, p.height / BUF_H) * 0.85;
+        const invScale = 1 / scaleF;
+        const renderW = BUF_W * scaleF, renderH = BUF_H * scaleF;
+        const ox = (p.width  - renderW) / 2 + mInfX;
+        const oy = (p.height - renderH) / 2 + mInfY;
+        const curM         = renderMode, prevM = prevMode, mt = modeT;
+        const transitionDone = mt >= 0.99;
+        const useNative    = (curM === 0) || (!transitionDone && prevM === 0);
+        if (useNative) { ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; }
+        const gEff  = (curM === 0 && transitionDone) ? asciiG : g;
+        const halfG = gEff * 0.5;
+        const yStart = p.max(0, p.floor(oy / gEff) * gEff);
+        const yEnd   = p.min(p.height, oy + renderH);
+        const xStart = p.max(0, p.floor(ox / gEff) * gEff);
+        const xEnd   = p.min(p.width, ox + renderW);
+        const asciiSize = gEff * 1.1;
+        let lastFontStr = '';
+
+        for (let sy = yStart; sy < yEnd; sy += gEff) {
+          const byBase = p.floor((sy - oy) * invScale);
+          if (byBase < 0 || byBase >= BUF_H) continue;
+          const rowOff = byBase * BUF_W;
+          for (let sx = xStart; sx < xEnd; sx += gEff) {
+            const bx = p.floor((sx - ox) * invScale);
+            if (bx < 0 || bx >= BUF_W) continue;
+            const idx = (rowOff + bx) * 4;
+            const r = px[idx], gr = px[idx+1], b = px[idx+2];
+            if ((r + gr + b) < 12) continue;
+            const bright = r*0.299 + gr*0.587 + b*0.114;
+            const cx = sx + halfG, cy = sy + halfG;
+            let mode;
+            if (transitionDone) {
+              mode = curM;
+            } else {
+              const hash = ((sx*73 + sy*137) & 0xFF) * 0.00392;
+              mode = hash < mt ? curM : prevM;
+            }
+            if (mode === 0) {
+              const fontSz  = p.floor(asciiSize * (0.4 + bright * 0.004));
+              const fontStr = fontSz + 'px Courier New';
+              if (fontStr !== lastFontStr) { ctx.font = fontStr; lastFontStr = fontStr; }
+              ctx.fillStyle = 'rgb(' + r + ',' + gr + ',' + b + ')';
+              const ci = ((bright >> 2) + ((sx*7 + sy*13) >> 3)) % chars.length;
+              ctx.fillText(chars[ci], cx, cy);
+            } else if (mode === 1) {
+              p.fill(r, gr, b);
+              const d = gEff * (0.1 + bright * 0.0033);
+              p.ellipse(cx, cy, d, d);
+            } else {
+              p.fill(r, gr, b);
+              p.rectMode(p.CENTER);
+              p.rect(cx, cy, gEff*0.93, gEff*0.93);
+            }
+          }
+        }
+      }
+
+      function drawFPS() {
+        p.fill(255, 255, 255, 40);
+        p.textSize(9);
+        p.textAlign(p.LEFT, p.TOP);
+        p.text(p.floor(p.frameRate()) + ' fps', 10, 10);
+        p.textAlign(p.CENTER, p.CENTER);
+      }
+
+      p.mousePressed = function() {
+        if (loadingPhase) return;
+        triggerGlitch();
+        const scaleF = p.min(p.width / BUF_W, p.height / BUF_H) * 0.85;
+        const ox = (p.width - BUF_W * scaleF) / 2 + mInfX;
+        const oy = (p.height - BUF_H * scaleF) / 2 + mInfY;
+        const mx = (p.mouseX - ox) / scaleF;
+        const my = (p.mouseY - oy) / scaleF;
+        for (const rb of rabbits) {
+          const dx = rb.x - mx, dy = (rb.y + rb.bodyBob) - my;
+          if (Math.sqrt(dx * dx + dy * dy) < 45 * rb.sc) {
+            if (rb.isApproaching) {
+              rb.approachPhase = 'walking_out';
+              rb.approachActionTimer = 0;
+              rb.standUp = 0;
+            } else {
+              rb.state = 'jumping';
+              rb.jumpTimer = 0;
+              rb.stateTimer = 1;
+            }
+            break;
+          }
+        }
+      };
+
+      p.keyPressed = function() {
+        if (p.key === 'f' || p.key === 'F') { const fs = p.fullscreen(); p.fullscreen(!fs); }
+        if (p.key === 'g' || p.key === 'G') triggerGlitch();
+      };
+
+      p.windowResized = function() {
+        p.resizeCanvas(p.windowWidth, p.windowHeight);
+      };
+    };
+
+    p5Instance = new p5(sketch, document.getElementById('canvas-container'));
+  </script>
+</body>
+</html>

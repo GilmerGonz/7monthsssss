@@ -1,0 +1,18 @@
+{
+  "name": "peoniap5-main",
+  "version": "1.0.0",
+  "description": "Una animación interactiva de una peonía hecha con p5.js. Corre directo en el navegador, sin instalar nada.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "dev": "vite"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "vite": "^8.1.3"
+  }
+}
